@@ -1,3 +1,12 @@
+## Setup Garak
+Unzip archive
+```cd <archive>/backend/app```\
+```export FLASK_APP=run.py```\
+```flask db init```\
+```flask db migrate -m "initial"```\
+```flask db upgrade```\
+```python setup-db.py```
+
 ## Start Garak
 ```cd /home/Operator/Desktop/garak/```\
 ```./start-garak.sh```
