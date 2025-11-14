@@ -10,20 +10,28 @@ If you would like to spin up your own environment in AWS, you will need the foll
 * git installed (https://github.com/git-guides/install-git)
 
 ### Cloning the repo
-Open a local terminal and run the following command to download all the files in this repo:\
-```git clone git@github.com:Final-Frontier-Security/SpaceHackingOdyssey.git```
+Open a local terminal and run the following command to download all the files in this repo:
+```
+git clone git@github.com:Final-Frontier-Security/SpaceHackingOdyssey.git
+```
 
 ### Uploading SSH Key
 The EC2 instances that are deployed by the CloudFormation template require you to have an SSH key configured with the name "bhu24". You can create your own key with that name or upload one using the bhus24.pub key material.\
-From the same termianl window, you can run the following to create the key:\
+From the same termianl window, you can run the following to create the key:
 ```
+# Let's hop in our newly cloned repo
 cd SpaceHackingOdyssey
-export AWS_DEFAULT_REGION=us-east-2 #Setting default region to us-east-2
-aws ec2 import-key-pair --key-name space_class --public-key-material fileb://space_class.pub --region us-east-2
+
+# Setting environment variable to default 'us-east-2' region
+# Required because the AMI images are only publicly available in 'us-east-2'
+export AWS_DEFAULT_REGION=us-east-2
+
+# Importing our key pair to AWS
+aws ec2 import-key-pair --key-name space_class --public-key-material fileb://space_class.pub
 ```
 
 ### Deploying the Environment
-Again, from that same terminal window, run the following AWS commands to start to deploy the environment. You may need to specify a region:\
+Again, from that same terminal window, run the following AWS commands to start to deploy the environment.
 ```
 # Uploading the yaml file to AWS to import the stack file
 aws cloudformation create-stack --stack-name space-class-stack --template-body file://SpaceHackingOdyssey_CloudFormation.yaml --capabilities CAPABILITY_NAMED_IAM
@@ -32,3 +40,9 @@ aws cloudformation create-stack --stack-name space-class-stack --template-body f
 aws cloudformation deploy --stack-name space-class-stack --template-file file://SpaceHackingOdyssey_CloudFormation.yaml --capabilities CAPABILITY_NAMED_IAM
 ```
 
+### Destroying the Environment
+We are not responsible for AWS fees incurred by the deployment of this stack. When you are finished, be sure to use this command to destroy the stack.
+The command will return once the stack is completely destroyed
+```
+aws cloudformation wait stack-delete-complete --stack-name space-class-stack
+```
