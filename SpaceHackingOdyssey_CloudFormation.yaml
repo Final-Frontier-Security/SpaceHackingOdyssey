@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Space-Training environment: VPC, subnets, IGW, route table, Route53 zones,
+  and three EC2 instances (opstation, groundstation, satellite).
+  NOTE: Default AMIs are only available in us-east-2.
+
+Parameters:
+  OpstationAmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-09b50263865a63757
+    Description: AMI ID for opstation instance (us-east-2).
+
+  GroundStationAmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-038eb91bff7721962
+    Description: AMI ID for groundstation instance (us-east-2).
+
+  SatelliteAmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-087ff12840649b03d
+    Description: AMI ID for satellite instance (us-east-2).
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.10.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Space-TrainingVPC
+        - Key: Project
+          Value: space-training
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Space-TrainingIGW
+        - Key: Project
+          Value: space-training
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Space-TrainingPublicRouteTable
+        - Key: Project
+          Value: space-training
+
+  DefaultRouteToInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn:
+      - VPCGatewayAttachment
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.10.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs ""
+      Tags:
+        - Key: Name
+          Value: Space-Training-10-10-10-0
+        - Key: Project
+          Value: space-training
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.20.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs ""
+      Tags:
+        - Key: Name
+          Value: Space-Training-10-10-20-0
+        - Key: Project
+          Value: space-training
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # ----------------------------------------
+  # SECURITY GROUPS
+  # ----------------------------------------
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and port 8443 from anywhere
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Space-TrainingEC2SG
+        - Key: Project
+          Value: space-training
+
+  InternalSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all traffic from internal subnets
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 10.10.10.0/24
+        - IpProtocol: -1
+          CidrIp: 10.10.20.0/24
+      Tags:
+        - Key: Name
+          Value: Space-TrainingInternalSG
+        - Key: Project
+          Value: space-training
+
+  # ----------------------------------------
+  # INSTANCES
+  # ----------------------------------------
+
+  OpstationInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref OpstationAmiId
+      InstanceType: c5.2xlarge
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref PublicSubnet2
+          PrivateIpAddress: 10.10.20.20
+          GroupSet:
+            - !Ref EC2SecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #cloud-config
+          runcmd:
+            - ['rm', '-f', '/home/operator/.ssh/known_hosts', '/root/.ssh/known_hosts', '/home/operator/.*_history', '/root/.*_history']
+            - ['systemctl', 'stop', 'dcvserver']
+            - ['systemctl', 'start', 'dcvserver']
+      Tags:
+        - Key: Name
+          Value: opstation
+        - Key: Project
+          Value: space-training
+
+  GroundStationInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref GroundStationAmiId
+      InstanceType: c5.2xlarge
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          SubnetId: !Ref PublicSubnet2
+          PrivateIpAddress: 10.10.20.10
+          GroupSet:
+            - !Ref InternalSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #cloud-config
+          runcmd:
+            - ['rm', '-f', '/home/operator/.ssh/known_hosts', '/root/.ssh/known_hosts', '/home/operator/.*_history', '/root/.*_history']
+      Tags:
+        - Key: Name
+          Value: groundstation
+        - Key: Project
+          Value: space-training
+
+  SatelliteInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref SatelliteAmiId
+      InstanceType: c5.2xlarge
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          SubnetId: !Ref PublicSubnet1
+          PrivateIpAddress: 10.10.10.10
+          GroupSet:
+            - !Ref InternalSecurityGroup
+      Tags:
+        - Key: Name
+          Value: satellite
+        - Key: Project
+          Value: space-training
+
+  # ----------------------------------------
+  # ROUTE53 ZONES
+  # ----------------------------------------
+
+  GroundStationHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: groundstation.earth
+      VPCs:
+        - VPCId: !Ref VPC
+          VPCRegion: !Ref AWS::Region
+      HostedZoneConfig:
+        PrivateZone: true
+      HostedZoneTags:
+        - Key: Project
+          Value: space-training
+
+  SpaceVehicleHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: spacevehicle.space
+      VPCs:
+        - VPCId: !Ref VPC
+          VPCRegion: !Ref AWS::Region
+      HostedZoneConfig:
+        PrivateZone: true
+      HostedZoneTags:
+        - Key: Project
+          Value: space-training
+
+  # ----------------------------------------
+  # DNS RECORDS
+  # ----------------------------------------
+
+  CosmosRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref GroundStationHostedZone
+      Name: cosmos.groundstation.earth
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - 10.10.20.10
+
+  OperatorRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref GroundStationHostedZone
+      Name: operator.groundstation.earth
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - 10.10.20.20
+
+  MoonlighterRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref SpaceVehicleHostedZone
+      Name: moonlighter.spacevehicle.space
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - 10.10.10.10
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  PublicSubnet1Id:
+    Description: Subnet ID for 10.10.10.0/24
+    Value: !Ref PublicSubnet1
+
+  PublicSubnet2Id:
+    Description: Subnet ID for 10.10.20.0/24
+    Value: !Ref PublicSubnet2
+
+  OpstationInstanceId:
+    Description: EC2 Instance ID for opstation
+    Value: !Ref OpstationInstance
+
+  GroundStationInstanceId:
+    Description: EC2 Instance ID for groundstation
+    Value: !Ref GroundStationInstance
+
+  SatelliteInstanceId:
+    Description: EC2 Instance ID for satellite
+    Value: !Ref SatelliteInstance
+
+  cosmosRecordName:
+    Description: DNS record for groundstation host
+    Value: cosmos.groundstation.earth
+
+  operatorRecordName:
+    Description: DNS record for opstation host
+    Value: operator.groundstation.earth
+
+  moonlighterRecordName:
+    Description: DNS record for satellite host
+    Value: moonlighter.spacevehicle.space
+
+  GroundStationZoneId:
+    Description: Route53 Private Zone for groundstation.earth
+    Value: !Ref GroundStationHostedZone
+
+  SpaceVehicleZoneId:
+    Description: Route53 Private Zone for spacevehicle.space
+    Value: !Ref SpaceVehicleHostedZone
