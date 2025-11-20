@@ -27,7 +27,7 @@ cd SpaceHackingOdyssey
 export AWS_DEFAULT_REGION=us-east-2
 
 # Importing our key pair to AWS
-aws ec2 import-key-pair --key-name space_class --public-key-material fileb://space_class.pub
+aws ec2 import-key-pair --key-name space_class --public-key-material fileb://space_class.pem
 ```
 
 ### Deploying the Environment
